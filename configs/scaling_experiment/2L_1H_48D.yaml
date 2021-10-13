@@ -32,7 +32,7 @@ optimizer:
     - 0.9
     - 0.999
     eps: 1.0e-08
-    lr: 0.003140093428140924
+    lr: 0.003086659640862316
   type: Adam
 partition-activations: true
 pipe-parallel-size: 1
