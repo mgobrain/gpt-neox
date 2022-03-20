@@ -3,12 +3,32 @@ import numpy as np
 import yaml
 import glob
 import subprocess
+import argparse
 
-# change this to argparse in the future
-template_yml = 'configs/smaller.yml'
-dummy_yml = 'configs/dummy.yml'
-sweep_yml = 'configs/sweep_config.yml'
-project = "neox_sweep"
+# argparse
+parser = argparse.ArgumentParser(
+        description='hyperparamter sweep from YAML'
+        )
+parser.add_argument('template_yml', help='path to template YAML',
+        default='./configs/smaller.yml')
+parser.add_argument('local_yml', help='path to local YAML',
+        default='./configs/local_setup_neo.yml')
+parser.add_argument('dummy_yml', help='path to dummy YAML',
+        default='./configs/dummy.yml')
+parser.add_argument('sweep_yml', help='path to sweep YAML',
+        default='./configs/sweep_yml')
+parser.add_argument('--conf_dir', '-d',
+        help='directory containing configs',
+        default='')
+parser.add_argument('--project', '-p', help='WandB project name',
+        default='neox_sweep')
+parser.add_argument('--group', '-g', help='WandB group name',
+        default='bernaise')
+args = parser.parse_args()
+template_yml = args.conf_dir+'/'+args.template_yml
+local_yml = args.conf_dir+'/'+args.local_yml
+dummy_yml = args.conf_dir+'/'+args.dummy_yml
+sweep_yml = args.conf_dir+'/'+args.sweep_yml
 
 # read template to dictionary
 with open(template_yml, 'r') as f:
@@ -30,7 +50,7 @@ for k in set(old_keys):
     base_conf.pop(k, None)
 
 sweep_config = {
-    'name': 'neox_sweep',
+    'name': args.project,
     'method': 'grid',
     'metric': {
         'name': 'lm_loss',
@@ -52,7 +72,7 @@ if sweep_yml:
         sweep_config['parameters'].update(user_conf)
 
 def train():
-    run = wandb.init(group="bernaise")
+    run = wandb.init(group=args.group)
     # conf stores the modified configuration
     conf = run.config.as_dict()
     print('GETTING CURRENT RUN CONFIG')
@@ -83,6 +103,7 @@ def train():
     # train
     print('TRAINING')
     print(conf)
+    # function for running deepy
     def cmd(args):
         with subprocess.Popen(args, stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT) as process:
@@ -90,21 +111,24 @@ def train():
                 line = _line.decode('utf8')
                 print(line)
                 if 'validation result' in line:
+                    # find loss
                     lm_loss = float(
                             [x for x in line.split('|') if \
                                     'lm_loss value' in x][0].split(':')[1].strip()
                             )
+                    # track loss
                     wandb.log({'lm_loss': lm_loss})
-    cmd('python deepy.py train.py -d configs dummy.yml local_setup_neo.yml'.split(' '))
+    # run deepy
+    cmd('python deepy.py train.py {} {}'.format(dummy_yml,local_yml).split(' '))
     run.finish()
 
 
 sweep_id = wandb.sweep(
-    sweep_config, project=project,
+    sweep_config, project=args.project,
 )
 agent = wandb.agent(
     sweep_id=sweep_id,
     function=train,
-    project=project
+    project=args.project
 )
 agent.run()
